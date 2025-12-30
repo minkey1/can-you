@@ -2,7 +2,7 @@
 # Replace with your actual model and API key
 
 model: "gemini/gemini-3-flash-preview"  # Use REST API format
-api_key: "Babaji ki API"  # Set your API key or use environment variables
+api_key: "YOUR_API_KEY_HERE"  # Set your API key or use environment variables
 
 # Optional: LiteLLM proxy configuration
 # proxy_url: "http://localhost:4000"
@@ -16,5 +16,5 @@ rate_limit_seconds: 7            # Seconds to wait before each LLM request
 tool_call_delay_seconds: 0.5     # Seconds to wait between tool calls
 
 # Planning mode settings (for -l flag)
-planning_model: "gemini-3-flash-preview"  # Use a more capable model for complex planning
+planning_model: "gemini/gemini-3-flash-preview"  # Use a more capable model for complex planning
 planning_temperature: 0.3

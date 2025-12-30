@@ -21,7 +21,7 @@ An intelligent command-line utility that generates and executes Linux commands b
    ```
 3. Configure your LLM API key in `config.yaml`:
    ```yaml
-   model: "gpt-4o-mini"
+      model: "gpt-5.1-codex-max"
    api_key: "YOUR_API_KEY_HERE"
    ```
 
@@ -60,6 +60,14 @@ python main.py --dry-run delete all .tmp files in /var/log
 # Long task with auto-confirm
 python main.py -l -y set up docker and run nginx container
 ```
+
+### Streamlit UI
+
+```bash
+pip install -r requirements.txt
+streamlit run ui/app.py
+```
+Use the toggles to switch between quick and long modes, auto-confirm prompts, and dry-run execution.
 
 ## Making it Executable (Linux)
 
@@ -116,7 +124,7 @@ Edit `config.yaml` to customize:
 
 ```yaml
 # Model selection
-model: "gpt-4o-mini"  # or "claude-3-5-sonnet-20241022", etc.
+model: "gpt-5.1-codex-max"  # or "claude-3-5-sonnet-20241022", etc.
 
 # API key (or set as environment variable)
 api_key: "YOUR_API_KEY_HERE"
@@ -126,7 +134,7 @@ temperature: 0.2
 max_tokens: 4096
 
 # Planning mode (for -l flag)
-planning_model: "gpt-4o"
+planning_model: "gpt-5.1-codex-max"
 planning_temperature: 0.3
 ```
 
