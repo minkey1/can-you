@@ -2,6 +2,7 @@ import litellm
 import yaml
 import json
 import os
+import time
 from pathlib import Path
 
 class LLMClient:
@@ -15,6 +16,8 @@ class LLMClient:
         self.model = config.get('model', 'gpt-4o-mini')
         self.temperature = config.get('temperature', 0.2)
         self.max_tokens = config.get('max_tokens', 4096)
+        self.rate_limit_seconds = config.get('rate_limit_seconds', 7)
+        self.tool_call_delay_seconds = config.get('tool_call_delay_seconds', 0.5)
         
         # Set API key from config or environment
         api_key = config.get('api_key')
@@ -45,6 +48,9 @@ class LLMClient:
         ]
         
         try:
+            # Rate limiting: wait before API request to avoid rate limiting
+            time.sleep(self.rate_limit_seconds)
+            
             kwargs = {
                 "model": self.model,
                 "messages": messages,

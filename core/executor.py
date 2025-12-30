@@ -1,5 +1,6 @@
 import json
 import subprocess
+import time
 from core.llm_client import LLMClient
 from tools.system_info import (
     get_file_tree,
@@ -210,6 +211,10 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
+            
+            # Rate limiting: small delay between tool calls to avoid overwhelming the API
+            delay = getattr(self.llm_client, 'tool_call_delay_seconds', 0.5)
+            time.sleep(delay)
             
             print(f"🔧 Calling tool: {function_name}({json.dumps(arguments, indent=2)})")
             
