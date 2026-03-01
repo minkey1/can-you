@@ -52,6 +52,12 @@ Modes:
         action='store_true',
         help='Show commands without executing them'
     )
+
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Show detailed tool calls, planning, and execution logs'
+    )
     
     args = parser.parse_args()
     
@@ -64,11 +70,11 @@ Modes:
         
         if args.long:
             # Use planner for complex tasks
-            planner = LongTaskPlanner(llm_client)
+            planner = LongTaskPlanner(llm_client, verbose=args.verbose)
             planner.execute_long_task(task_description, args.yes, args.dry_run)
         else:
             # Use executor for quick tasks
-            executor = CommandExecutor(llm_client)
+            executor = CommandExecutor(llm_client, verbose=args.verbose)
             executor.execute_quick_task(task_description, args.yes, args.dry_run)
     
     except KeyboardInterrupt:

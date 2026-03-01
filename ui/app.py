@@ -26,10 +26,10 @@ def run_task(task: str, use_long: bool, auto_confirm: bool, dry_run: bool) -> st
     with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
         llm_client = LLMClient()
         if use_long:
-            planner = LongTaskPlanner(llm_client)
+            planner = LongTaskPlanner(llm_client, show_progress=False)
             planner.execute_long_task(task, auto_confirm, dry_run)
         else:
-            executor = CommandExecutor(llm_client)
+            executor = CommandExecutor(llm_client, show_progress=False)
             executor.execute_quick_task(task, auto_confirm, dry_run)
 
     return buffer.getvalue()

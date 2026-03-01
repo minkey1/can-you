@@ -2,6 +2,7 @@ import json
 import subprocess
 import time
 from core.llm_client import LLMClient
+from core.progress import LiveProgress
 from tools.system_info import (
     get_file_tree,
     check_port_in_use,
@@ -146,13 +147,19 @@ TOOL_DEFINITIONS = [
 
 
 class CommandExecutor:
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, verbose: bool = False, show_progress: bool = True):
         self.llm_client = llm_client
+        self.verbose = verbose
+        self.progress = LiveProgress(enabled=(show_progress and not verbose))
         self.max_iterations = 10  # Prevent infinite loops
+
+    def _vprint(self, message=""):
+        if self.verbose:
+            print(message)
     
     def execute_quick_task(self, task_description, auto_confirm=False, dry_run=False):
         """Execute a single-step task"""
-        print(f"\n🎯 Task: {task_description}\n")
+        self._vprint(f"\n🎯 Task: {task_description}\n")
         
         # Get platform information
         platform_info = get_platform_info()
@@ -178,10 +185,11 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
             
             # Get LLM response
             try:
-                response = self.llm_client.chat(
-                    context if iteration == 1 else "Continue with the task.",
-                    tools=TOOL_DEFINITIONS
-                )
+                with self.progress.activity("AI is analyzing task"):
+                    response = self.llm_client.chat(
+                        context if iteration == 1 else "Continue with the task.",
+                        tools=TOOL_DEFINITIONS
+                    )
             except Exception as e:
                 print(f"❌ Error communicating with LLM: {e}")
                 return
@@ -208,21 +216,26 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
     
     def _handle_tool_calls(self, tool_calls):
         """Execute tool calls and add results to conversation"""
-        for tool_call in tool_calls:
+        total_calls = len(tool_calls)
+        for index, tool_call in enumerate(tool_calls, 1):
             function_name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)
+
+            if self.progress.enabled:
+                self.progress.snapshot(index - 1, total_calls, f"Gathering context ({index}/{total_calls})")
             
             # Rate limiting: small delay between tool calls to avoid overwhelming the API
             delay = getattr(self.llm_client, 'tool_call_delay_seconds', 0.5)
             time.sleep(delay)
             
-            print(f"🔧 Calling tool: {function_name}({json.dumps(arguments, indent=2)})")
+            self._vprint(f"🔧 Calling tool: {function_name}({json.dumps(arguments, indent=2)})")
             
             # Execute the tool
             if function_name in TOOL_FUNCTIONS:
                 try:
-                    result = TOOL_FUNCTIONS[function_name](**arguments)
-                    print(f"✅ Tool result received\n")
+                    with self.progress.activity(f"Calling tool {index}/{total_calls}: {function_name}"):
+                        result = TOOL_FUNCTIONS[function_name](**arguments)
+                    self._vprint("✅ Tool result received\n")
                     
                     # Add tool result to conversation
                     self.llm_client.add_tool_response(
@@ -232,14 +245,20 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
                     )
                 except Exception as e:
                     error_result = {"error": str(e)}
-                    print(f"❌ Tool error: {e}\n")
+                    self._vprint(f"❌ Tool error: {e}\n")
                     self.llm_client.add_tool_response(
                         tool_call.id,
                         function_name,
                         error_result
                     )
             else:
-                print(f"⚠️  Unknown tool: {function_name}")
+                self._vprint(f"⚠️  Unknown tool: {function_name}")
+
+            if self.progress.enabled:
+                self.progress.snapshot(index, total_calls, f"Gathering context ({index}/{total_calls})")
+        
+        # Clear progress bar after tool gathering is complete
+        self.progress.clear()
     
     def _parse_llm_response(self, content):
         """Parse LLM response for commands"""
@@ -265,22 +284,24 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
         warnings = result.get('warnings', [])
         requires_confirmation = result.get('requires_confirmation', True)
         
-        if explanation:
+        if self.verbose and explanation:
             print(f"📋 Explanation:\n{explanation}\n")
         
-        if warnings:
+        if self.verbose and warnings:
             print("⚠️  Warnings:")
             for warning in warnings:
                 print(f"  - {warning}")
             print()
         
-        print("📝 Commands to execute:")
-        for i, cmd in enumerate(commands, 1):
-            print(f"  {i}. {cmd}")
-        print()
+        if self.verbose:
+            print("📝 Commands to execute:")
+            for i, cmd in enumerate(commands, 1):
+                print(f"  {i}. {cmd}")
+            print()
         
         if dry_run:
-            print("🔍 Dry run mode - not executing commands")
+            if self.verbose:
+                print("🔍 Dry run mode - not executing commands")
             return
         
         # Validate command safety
@@ -298,22 +319,27 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
                 return
         
         # Execute commands
-        print("\n🚀 Executing commands...\n")
-        # Show shell being used for transparency
-        pi = get_platform_info()
-        print(f"Using shell: {pi.get('shell', 'unknown')} ({pi.get('shell_type', '')}) on {pi.get('platform', 'unknown platform')}\n")
+        if self.verbose:
+            print("\n🚀 Executing commands...\n")
+            pi = get_platform_info()
+            print(f"Using shell: {pi.get('shell', 'unknown')} ({pi.get('shell_type', '')}) on {pi.get('platform', 'unknown platform')}\n")
+        if self.progress.enabled:
+            self.progress.snapshot(0, len(commands), f"Executing commands (0/{len(commands)})")
         for i, cmd in enumerate(commands, 1):
+            if self.progress.enabled:
+                self.progress.snapshot(i - 1, len(commands), f"Executing commands ({i}/{len(commands)})")
             print(f"[{i}/{len(commands)}] Running: {cmd}")
             try:
                 # Build proper shell command based on platform/shell
                 run_cmd = build_shell_command(cmd)
-                result = subprocess.run(
-                    run_cmd,
-                    shell=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
+                with self.progress.activity(f"Running command {i}/{len(commands)}"):
+                    result = subprocess.run(
+                        run_cmd,
+                        shell=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=300
+                    )
                 
                 if result.stdout:
                     print(result.stdout)
@@ -323,9 +349,19 @@ IMPORTANT: Generate commands appropriate for the {platform_info.get('platform', 
                 if result.returncode != 0:
                     print(f"⚠️  Command exited with code {result.returncode}")
                 else:
-                    print(f"✅ Success\n")
+                    if self.verbose:
+                        print("✅ Success\n")
+                if self.progress.enabled:
+                    self.progress.snapshot(i, len(commands), f"Executing commands ({i}/{len(commands)})")
                     
             except subprocess.TimeoutExpired:
                 print(f"⏱️  Command timed out after 300 seconds")
+                if self.progress.enabled:
+                    self.progress.snapshot(i, len(commands), f"Executing commands ({i}/{len(commands)})")
             except Exception as e:
                 print(f"❌ Error: {e}")
+                if self.progress.enabled:
+                    self.progress.snapshot(i, len(commands), f"Executing commands ({i}/{len(commands)})")
+        
+        # Clear progress bar after all commands are executed
+        self.progress.clear()

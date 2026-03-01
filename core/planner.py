@@ -1,18 +1,25 @@
 import json
 from core.llm_client import LLMClient
 from core.executor import CommandExecutor, TOOL_DEFINITIONS
+from core.progress import LiveProgress
 from tools.system_info import get_platform_info
 
 
 class LongTaskPlanner:
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, verbose: bool = False, show_progress: bool = True):
         self.llm_client = llm_client
-        self.executor = CommandExecutor(llm_client)
+        self.verbose = verbose
+        self.progress = LiveProgress(enabled=(show_progress and not verbose))
+        self.executor = CommandExecutor(llm_client, verbose=verbose, show_progress=show_progress)
+
+    def _vprint(self, message=""):
+        if self.verbose:
+            print(message)
     
     def execute_long_task(self, task_description, auto_confirm=False, dry_run=False):
         """Execute a multi-step task with planning"""
-        print(f"\n🎯 Long Task Mode: {task_description}\n")
-        print("📊 Planning phase...\n")
+        self._vprint(f"\n🎯 Long Task Mode: {task_description}\n")
+        self._vprint("📊 Planning phase...\n")
         
         # Phase 1: Planning
         plan = self._create_plan(task_description)
@@ -21,13 +28,14 @@ class LongTaskPlanner:
             print("❌ Failed to create a plan")
             return
         
-        print("📋 Execution Plan:")
+        self._vprint("📋 Execution Plan:")
         steps = plan.get('steps', [])
-        for i, step in enumerate(steps, 1):
-            print(f"  {i}. {step['description']}")
-            if 'validation' in step:
-                print(f"     Validation: {step['validation']}")
-        print()
+        if self.verbose:
+            for i, step in enumerate(steps, 1):
+                print(f"  {i}. {step['description']}")
+                if 'validation' in step:
+                    print(f"     Validation: {step['validation']}")
+            print()
         
         # Ask for plan approval
         if not auto_confirm:
@@ -37,23 +45,34 @@ class LongTaskPlanner:
                 return
         
         # Phase 2: Execute each step
-        print("\n🚀 Executing plan...\n")
+        self._vprint("\n🚀 Executing plan...\n")
+        if self.progress.enabled:
+            self.progress.snapshot(0, len(steps), f"Executing plan steps (0/{len(steps)})")
         for i, step in enumerate(steps, 1):
-            print(f"\n{'='*60}")
-            print(f"Step {i}/{len(steps)}: {step['description']}")
-            print(f"{'='*60}\n")
+            if self.progress.enabled:
+                self.progress.snapshot(i - 1, len(steps), f"Executing plan steps ({i}/{len(steps)})")
+            if self.verbose:
+                print(f"\n{'='*60}")
+                print(f"Step {i}/{len(steps)}: {step['description']}")
+                print(f"{'='*60}\n")
             
             # Execute the step
             success = self._execute_step(step, auto_confirm, dry_run)
             
             if not success and not dry_run:
                 print(f"\n❌ Step {i} failed. Aborting remaining steps.")
+                if self.progress.enabled:
+                    self.progress.snapshot(i, len(steps), f"Executing plan steps ({i}/{len(steps)})")
                 break
             
             if i < len(steps):
-                print(f"\n✅ Step {i} completed. Moving to next step...\n")
+                self._vprint(f"\n✅ Step {i} completed. Moving to next step...\n")
+            if self.progress.enabled:
+                self.progress.snapshot(i, len(steps), f"Executing plan steps ({i}/{len(steps)})")
         
-        print("\n✨ Long task completed!")
+        # Clear progress bar after all steps are executed
+        self.progress.clear()
+        self._vprint("\n✨ Long task completed!")
     
     def _create_plan(self, task_description):
         """Ask LLM to create a multi-step plan"""
@@ -93,10 +112,11 @@ Output your plan in this JSON format:
 """
         
         try:
-            response = self.llm_client.chat(
-                planning_prompt,
-                use_planning_mode=True
-            )
+            with self.progress.activity("AI is creating execution plan"):
+                response = self.llm_client.chat(
+                    planning_prompt,
+                    use_planning_mode=True
+                )
             
             content = response.choices[0].message.content
             
@@ -122,13 +142,14 @@ Output your plan in this JSON format:
         
         # Show validation requirements
         if 'validation' in step:
-            print(f"🔍 Validation: {step['validation']}\n")
+            self._vprint(f"🔍 Validation: {step['validation']}\n")
         
         if 'risks' in step and step['risks']:
-            print("⚠️  Risks for this step:")
-            for risk in step['risks']:
-                print(f"  - {risk}")
-            print()
+            if self.verbose:
+                print("⚠️  Risks for this step:")
+                for risk in step['risks']:
+                    print(f"  - {risk}")
+                print()
         
         # Reset conversation for this step
         self.llm_client.reset_conversation()

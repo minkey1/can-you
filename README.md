@@ -47,6 +47,9 @@ python main.py -l backup database and upload to s3
 - `-l, --long`: Enable long-form planning mode for multi-step tasks
 - `-y, --yes`: Auto-confirm all prompts (use with caution)
 - `--dry-run`: Show commands without executing them
+- `-v, --verbose`: Show detailed logs (tool calls, explanations, and execution context)
+
+By default, the CLI now shows live progress bars in normal mode. In verbose mode (`-v`), detailed logs are shown instead of progress bars.
 
 ### Examples
 
@@ -59,6 +62,9 @@ python main.py --dry-run delete all .tmp files in /var/log
 
 # Long task with auto-confirm
 python main.py -l -y set up docker and run nginx container
+
+# Show full detailed logs
+python main.py -v check the folder
 ```
 
 ### Streamlit UI
